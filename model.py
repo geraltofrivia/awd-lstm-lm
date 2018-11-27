@@ -5,7 +5,8 @@ from embed_regularize import embedded_dropout
 from locked_dropout import LockedDropout
 from weight_drop import WeightDrop
 
-trim = lambda x : x[:, :(x.shape[1] - torch.min(torch.sum(x.eq(0).long(), dim=1))).item()]
+trim = lambda x: x[:, :(x.shape[1] - torch.min(torch.sum(x.eq(0).long(), dim=1))).item()]
+
 
 def compute_mask(t, padding_idx=0):
     """
@@ -16,6 +17,7 @@ def compute_mask(t, padding_idx=0):
     """
     mask = torch.ne(t, padding_idx).float()
     return mask
+
 
 class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a decoder."""
@@ -50,7 +52,7 @@ class RNNModel(nn.Module):
                 rnn.linear = WeightDrop(rnn.linear, ['weight'], dropout=wdrop)
         print(self.rnns)
         self.rnns = torch.nn.ModuleList(self.rnns)
-        self.decoder = nn.Linear(nhid, ntoken)
+        #         self.decoder = nn.Linear(nhid, ntoken)
 
         # Optionally tie weights as in:
         # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
@@ -58,10 +60,10 @@ class RNNModel(nn.Module):
         # and
         # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
         # https://arxiv.org/abs/1611.01462
-        if tie_weights:
-            # if nhid != ninp:
-            #    raise ValueError('When using the tied flag, nhid must be equal to emsize')
-            self.decoder.weight = self.encoder.weight
+        #         if tie_weights:
+        #             #if nhid != ninp:
+        #             #    raise ValueError('When using the tied flag, nhid must be equal to emsize')
+        #             self.decoder.weight = self.encoder.weight
 
         self.init_weights()
 
@@ -81,8 +83,9 @@ class RNNModel(nn.Module):
     def init_weights(self):
         initrange = 0.1
         self.encoder.weight.data.uniform_(-initrange, initrange)
-        self.decoder.bias.data.fill_(0)
-        self.decoder.weight.data.uniform_(-initrange, initrange)
+
+    #         self.decoder.bias.data.fill_(0)
+    #         self.decoder.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, input, hidden, return_h=False):
         nlayers = self.nlayers
@@ -99,7 +102,6 @@ class RNNModel(nn.Module):
 
         emb_sort = emb.index_select(1, idx_sort)  # sl * bs * ninp
         hid_sort = [(h[0].index_select(1, idx_sort), h[1].index_select(1, idx_sort)) for h in hidden]
-        emb_sort = torch.nn.utils.rnn.pack_padded_sequence(emb_sort, lengths_sort)
 
         #         raw_output = emb_sort
         new_hidden = []
@@ -108,6 +110,7 @@ class RNNModel(nn.Module):
         outputs = []
 
         for l, rnn in enumerate(self.rnns):
+            emb_sort = torch.nn.utils.rnn.pack_padded_sequence(emb_sort, lengths_sort)
             current_input = emb_sort
             emb_sort, new_h = rnn(emb_sort, hid_sort[l])
             emb_sort, _ = torch.nn.utils.rnn.pad_packed_sequence(emb_sort)
@@ -116,7 +119,7 @@ class RNNModel(nn.Module):
             raw_outputs.append(emb_sort)
 
             if l != nlayers - 1:
-                emb_sort = lockdrop(emb_sort, dropouth)
+                emb_sort = self.lockdrop(emb_sort, self.dropouth)
                 outputs.append(emb_sort)
 
         raw_outputs = [raw_output.index_select(1, idx_unsort) for raw_output in raw_outputs]
